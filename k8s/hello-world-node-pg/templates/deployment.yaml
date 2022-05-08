@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+          - name: CONNECTION_STRING
+            valueFrom:
+              secretKeyRef:
+                name: postgres-connection-string
+                key: value
+          - name: CRT_PATH
+            value: /etc/tls/tls.crt
+          - name: KEY_PATH
+            value: /etc/tls/tls.key
+          - name: HTTP_VERSION
+            value: "1"
+          - name: PORT
+            value: "{{ .Values.service.port }}"
+          ports:
+            - name: https
+              containerPort: {{ .Values.service.port }}              
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: https
+              scheme: HTTPS
+          readinessProbe:
+            httpGet:
+              path: /
+              port: https
+              scheme: HTTPS
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+          - name: secrets-store
+            mountPath: /etc/secrets
+            readOnly: true
+          - name: secrets-tls
+            mountPath: /etc/tls
+            readOnly: true
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: azure-key-vault
+      - name: secrets-tls
+        secret:
+          secretName: tls
+          optional: false
